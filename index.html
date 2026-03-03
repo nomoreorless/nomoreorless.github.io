@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>手写轨迹采集 - 完美绘制版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            background: #f0f2f5;
+            font-family: system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.12);
+            padding: 24px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h2 {
+            margin: 0 0 16px 0;
+            font-weight: 500;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.5rem;
+        }
+        h2 small {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: #64748b;
+            margin-left: auto;
+        }
+        
+        /* 画板容器 */
+        .canvas-wrapper {
+            border: 2px solid #e2e8f0;
+            border-radius: 16px;
+            background: #ffffff;
+            cursor: crosshair;
+            /* 禁用触摸动作但允许鼠标事件 */
+            touch-action: none;
+            -webkit-touch-action: none;
+            /* 确保容器有正确的高度 */
+            width: 100%;
+            height: 0;
+            padding-bottom: 50%;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: white;
+            pointer-events: none;
+            image-rendering: crisp-edges;
+        }
+        
+        .toolbar {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        button {
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 40px;
+            padding: 10px 20px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #1e293b;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        
+        button:active {
+            background: #f1f5f9;
+            transform: scale(0.98);
+        }
+        
+        button.primary {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: white;
+        }
+        
+        .stats {
+            background: #f1f5f9;
+            border-radius: 40px;
+            padding: 8px 20px;
+            font-size: 0.9rem;
+            color: #334155;
+            display: flex;
+            gap: 24px;
+            margin-left: auto;
+        }
+        
+        .stats span {
+            font-weight: 600;
+            color: #0f172a;
+        }
+        
+        .footer-note {
+            margin-top: 16px;
+            font-size: 0.85rem;
+            color: #64748b;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        
+        .footer-note label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 14px;
+            padding: 14px 18px;
+            font-size: 0.8rem;
+            font-family: monospace;
+            overflow-x: auto;
+            max-width: 100%;
+            max-height: 150px;
+            margin: 12px 0 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* 全屏遮罩 - 只在触摸时激活 */
+        .drawing-mask {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: transparent;
+            z-index: 9999;
+            display: none;
+            touch-action: none;
+        }
+        .drawing-mask.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="drawingMask" class="drawing-mask"></div>
+
+    <div class="container">
+        <h2>
+            ✍️ 手写轨迹采集
+            <small>鼠标/触摸均可绘制</small>
+        </h2>
+
+        <div id="canvasWrapper" class="canvas-wrapper">
+            <canvas id="signatureCanvas" width="800" height="400"></canvas>
+        </div>
+
+        <div class="toolbar">
+            <button id="clearBtn">🗑️ 清空</button>
+            <button id="undoBtn">↩️ 撤销</button>
+            <button id="exportBtn" class="primary">📥 导出 JSON</button>
+            <button id="copyBtn">📋 复制数据</button>
+            <div class="stats">
+                <span id="pointCount">0</span> 点 · <span id="strokeCount">0</span> 笔
+            </div>
+        </div>
+
+        <div class="footer-note">
+            <label>
+                <input type="checkbox" id="collectHoverCheckbox" checked> 采集悬停
+            </label>
+            <label>
+                <input type="checkbox" id="realTimeCheckbox" checked> 实时显示
+            </label>
+            <span style="margin-left: auto;">✏️ 现在可以绘制了</span>
+        </div>
+
+        <pre id="previewArea">[等待采集...]</pre>
+    </div>
+
+    <script>
+        (function() {
+            "use strict";
+
+            // 点类
+            class Point {
+                constructor(x, y, t, p = 0.5) {
+                    this.x = x; this.y = y; this.t = t; this.p = p;
+                }
+            }
+
+            // 笔画类
+            class Stroke {
+                constructor(startPoint) {
+                    this.points = [startPoint];
+                    this.startTime = startPoint.t;
+                }
+                addPoint(p) { this.points.push(p); }
+                lastPoint() { return this.points[this.points.length - 1]; }
+            }
+
+            // DOM 元素
+            const canvas = document.getElementById('signatureCanvas');
+            const wrapper = document.getElementById('canvasWrapper');
+            const ctx = canvas.getContext('2d');
+            const drawingMask = document.getElementById('drawingMask');
+
+            // 状态
+            let strokes = [];
+            let currentStroke = null;
+            let isDrawing = false;
+            let lastWasHover = false;
+            
+            // 性能优化
+            let redrawPending = false;
+            let lastPointTime = 0;
+            
+            // 常量
+            const MIN_DIST = 2;
+            const MIN_TIME = 8;
+
+            // UI 元素
+            const pointCountSpan = document.getElementById('pointCount');
+            const strokeCountSpan = document.getElementById('strokeCount');
+            const previewArea = document.getElementById('previewArea');
+            const collectHoverCheckbox = document.getElementById('collectHoverCheckbox');
+            const realTimeCheckbox = document.getElementById('realTimeCheckbox');
+            const clearBtn = document.getElementById('clearBtn');
+            const undoBtn = document.getElementById('undoBtn');
+            const exportBtn = document.getElementById('exportBtn');
+            const copyBtn = document.getElementById('copyBtn');
+
+            // 锁定/解锁
+            function activateDrawingLock() {
+                drawingMask.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+
+            function deactivateDrawingLock() {
+                drawingMask.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+
+            // 获取坐标
+            function getCanvasCoords(e) {
+                let clientX, clientY, pressure = 0.5;
+
+                if (e.type.startsWith('touch')) {
+                    const touch = e.touches[0] || e.changedTouches[0];
+                    if (!touch) return null;
+                    clientX = touch.clientX;
+                    clientY = touch.clientY;
+                    if (touch.force !== undefined && touch.force > 0) {
+                        pressure = Math.min(touch.force, 1.0);
+                    }
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+
+                const rect = canvas.getBoundingClientRect();
+                
+                // 边界检查
+                if (clientX < rect.left || clientX > rect.right || 
+                    clientY < rect.top || clientY > rect.bottom) {
+                    return null;
+                }
+                
+                // 计算画布坐标
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+
+                const x = (clientX - rect.left) * scaleX;
+                const y = (clientY - rect.top) * scaleY;
+
+                return {
+                    x: Math.max(0, Math.min(canvas.width, x)),
+                    y: Math.max(0, Math.min(canvas.height, y)),
+                    pressure
+                };
+            }
+
+            // 是否添加点
+            function shouldAddPoint(prev, x, y, t) {
+                if (!prev) return true;
+                const dx = x - prev.x;
+                const dy = y - prev.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                return dist >= MIN_DIST && (t - prev.t) >= MIN_TIME;
+            }
+
+            // 更新预览
+            function updatePreview() {
+                const totalPoints = strokes.reduce((acc, s) => acc + s.points.length, 0) + (currentStroke ? currentStroke.points.length : 0);
+                pointCountSpan.innerText = totalPoints;
+                strokeCountSpan.innerText = strokes.length + (currentStroke ? 1 : 0);
+
+                if (totalPoints > 0) {
+                    const lastStroke = currentStroke || strokes[strokes.length - 1];
+                    if (lastStroke && lastStroke.points.length > 0) {
+                        const last = lastStroke.points[lastStroke.points.length - 1];
+                        previewArea.innerText = `最新点: (${last.x.toFixed(1)}, ${last.y.toFixed(1)}) 压力:${last.p.toFixed(2)} 时间:${Math.round(last.t)}`;
+                    }
+                } else {
+                    previewArea.innerText = '[等待采集...]';
+                }
+            }
+
+            // 重绘
+            function requestRedraw() {
+                if (!redrawPending) {
+                    redrawPending = true;
+                    requestAnimationFrame(() => {
+                        performRedraw();
+                        redrawPending = false;
+                    });
+                }
+            }
+
+            function performRedraw() {
+                if (!realTimeCheckbox.checked) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    return;
+                }
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                // 绘制已完成笔画
+                for (const stroke of strokes) {
+                    if (stroke.points.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#2563eb';
+                    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+                    for (let i = 1; i < stroke.points.length; i++) {
+                        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+                    }
+                    ctx.stroke();
+                }
+
+                // 绘制当前笔画
+                if (currentStroke && currentStroke.points.length >= 2) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#dc2626';
+                    ctx.moveTo(currentStroke.points[0].x, currentStroke.points[0].y);
+                    for (let i = 1; i < currentStroke.points.length; i++) {
+                        ctx.lineTo(currentStroke.points[i].x, currentStroke.points[i].y);
+                    }
+                    ctx.stroke();
+                }
+            }
+
+            // 添加点
+            function addPointFromEvent(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (!isDrawing && !collectHoverCheckbox.checked) return;
+
+                const coords = getCanvasCoords(e);
+                if (!coords) return;
+
+                const now = performance.now();
+                
+                if (now - lastPointTime < 4) return;
+                lastPointTime = now;
+
+                if (isDrawing) {
+                    // 绘制模式
+                    if (!currentStroke) {
+                        currentStroke = new Stroke(new Point(coords.x, coords.y, now, coords.pressure));
+                    } else {
+                        const last = currentStroke.lastPoint();
+                        if (shouldAddPoint(last, coords.x, coords.y, now)) {
+                            currentStroke.addPoint(new Point(coords.x, coords.y, now, coords.pressure));
+                        }
+                    }
+                    lastWasHover = false;
+                } else if (collectHoverCheckbox.checked) {
+                    // 悬停模式
+                    if (!lastWasHover) {
+                        if (currentStroke) {
+                            strokes.push(currentStroke);
+                            currentStroke = null;
+                        }
+                        strokes.push(new Stroke(new Point(coords.x, coords.y, now, coords.pressure)));
+                        lastWasHover = true;
+                    } else {
+                        const lastStroke = strokes[strokes.length - 1];
+                        const last = lastStroke.lastPoint();
+                        if (shouldAddPoint(last, coords.x, coords.y, now)) {
+                            lastStroke.addPoint(new Point(coords.x, coords.y, now, coords.pressure));
+                        }
+                    }
+                }
+
+                updatePreview();
+                requestRedraw();
+            }
+
+            // 开始绘制 - 鼠标版本
+            function startDrawingMouse(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // 鼠标绘制时不锁定滚动（因为鼠标不会导致滚动）
+                // 但仍然需要记录绘制状态
+                
+                const coords = getCanvasCoords(e);
+                if (!coords) return;
+
+                const now = performance.now();
+                lastPointTime = now;
+                
+                if (currentStroke) {
+                    strokes.push(currentStroke);
+                    currentStroke = null;
+                }
+                
+                currentStroke = new Stroke(new Point(coords.x, coords.y, now, coords.pressure));
+                isDrawing = true;
+                lastWasHover = false;
+
+                updatePreview();
+                requestRedraw();
+            }
+
+            // 开始绘制 - 触摸版本
+            function startDrawingTouch(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // 触摸时锁定滚动
+                activateDrawingLock();
+                
+                const coords = getCanvasCoords(e);
+                if (!coords) {
+                    deactivateDrawingLock();
+                    return;
+                }
+
+                const now = performance.now();
+                lastPointTime = now;
+                
+                if (currentStroke) {
+                    strokes.push(currentStroke);
+                    currentStroke = null;
+                }
+                
+                currentStroke = new Stroke(new Point(coords.x, coords.y, now, coords.pressure));
+                isDrawing = true;
+                lastWasHover = false;
+
+                updatePreview();
+                requestRedraw();
+            }
+
+            // 结束绘制 - 通用版本
+            function stopDrawing(e) {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                
+                if (isDrawing && currentStroke) {
+                    strokes.push(currentStroke);
+                    currentStroke = null;
+                }
+                isDrawing = false;
+                lastWasHover = false;
+                
+                // 解锁（如果是触摸绘制的）
+                deactivateDrawingLock();
+                
+                updatePreview();
+                requestRedraw();
+            }
+
+            // 事件绑定
+            function bindEvents() {
+                // 鼠标事件 - 直接绑定到wrapper
+                wrapper.addEventListener('mousedown', startDrawingMouse);
+                wrapper.addEventListener('mousemove', addPointFromEvent);
+                wrapper.addEventListener('mouseup', stopDrawing);
+                wrapper.addEventListener('mouseleave', stopDrawing);
+                
+                // 触摸事件 - 绑定到遮罩层和wrapper双重保障
+                wrapper.addEventListener('touchstart', startDrawingTouch, { passive: false });
+                wrapper.addEventListener('touchmove', addPointFromEvent, { passive: false });
+                wrapper.addEventListener('touchend', stopDrawing, { passive: false });
+                wrapper.addEventListener('touchcancel', stopDrawing, { passive: false });
+                
+                // 遮罩层触摸事件（防止穿透）
+                drawingMask.addEventListener('touchstart', startDrawingTouch, { passive: false });
+                drawingMask.addEventListener('touchmove', addPointFromEvent, { passive: false });
+                drawingMask.addEventListener('touchend', stopDrawing, { passive: false });
+                drawingMask.addEventListener('touchcancel', stopDrawing, { passive: false });
+                
+                // 全局事件，确保释放
+                window.addEventListener('mouseup', stopDrawing);
+            }
+
+            // 按钮功能
+            function clearCanvas() {
+                strokes = [];
+                currentStroke = null;
+                isDrawing = false;
+                lastWasHover = false;
+                deactivateDrawingLock();
+                updatePreview();
+                requestRedraw();
+            }
+
+            function undo() {
+                if (currentStroke) {
+                    currentStroke = null;
+                    isDrawing = false;
+                    deactivateDrawingLock();
+                } else if (strokes.length > 0) {
+                    strokes.pop();
+                }
+                updatePreview();
+                requestRedraw();
+            }
+
+            function exportJSON() {
+                const allStrokes = [...strokes];
+                if (currentStroke) allStrokes.push(currentStroke);
+                
+                const data = {
+                    meta: {
+                        width: canvas.width,
+                        height: canvas.height,
+                        time: new Date().toISOString(),
+                        strokes: allStrokes.length,
+                        points: allStrokes.reduce((acc, s) => acc + s.points.length, 0)
+                    },
+                    strokes: allStrokes.map(s => ({
+                        start: s.startTime,
+                        points: s.points.map(p => ({
+                            x: Math.round(p.x * 10) / 10,
+                            y: Math.round(p.y * 10) / 10,
+                            t: p.t,
+                            p: Math.round(p.p * 100) / 100
+                        }))
+                    }))
+                };
+                return JSON.stringify(data, null, 2);
+            }
+
+            function downloadJSON() {
+                const json = exportJSON();
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `handwriting_${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            async function copyJSON() {
+                try {
+                    await navigator.clipboard.writeText(exportJSON());
+                    alert('已复制到剪贴板');
+                } catch (err) {
+                    alert('复制失败');
+                }
+            }
+
+            // 初始化
+            clearBtn.addEventListener('click', clearCanvas);
+            undoBtn.addEventListener('click', undo);
+            exportBtn.addEventListener('click', downloadJSON);
+            copyBtn.addEventListener('click', copyJSON);
+            realTimeCheckbox.addEventListener('change', requestRedraw);
+
+            bindEvents();
+            clearCanvas();
+
+            console.log('初始化完成，可以使用鼠标绘制了');
+        })();
+    </script>
+</body>
+</html>
