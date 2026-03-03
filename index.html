@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>手写轨迹采集 - 完美绘制版</title>
+    <title>手写轨迹采集 - 触控完美版</title>
     <style>
         * {
             margin: 0;
@@ -54,7 +54,7 @@
             border-radius: 16px;
             background: #ffffff;
             cursor: crosshair;
-            /* 禁用触摸动作但允许鼠标事件 */
+            /* 完全禁用所有触摸动作，但允许鼠标 */
             touch-action: none;
             -webkit-touch-action: none;
             /* 确保容器有正确的高度 */
@@ -135,6 +135,7 @@
             display: flex;
             gap: 16px;
             flex-wrap: wrap;
+            align-items: center;
         }
         
         .footer-note label {
@@ -142,6 +143,15 @@
             align-items: center;
             gap: 6px;
             cursor: pointer;
+        }
+        
+        .pressure-indicator {
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin-left: auto;
         }
         
         pre {
@@ -158,31 +168,13 @@
             white-space: pre-wrap;
             word-wrap: break-word;
         }
-
-        /* 全屏遮罩 - 只在触摸时激活 */
-        .drawing-mask {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: transparent;
-            z-index: 9999;
-            display: none;
-            touch-action: none;
-        }
-        .drawing-mask.active {
-            display: block;
-        }
     </style>
 </head>
 <body>
-    <div id="drawingMask" class="drawing-mask"></div>
-
     <div class="container">
         <h2>
             ✍️ 手写轨迹采集
-            <small>鼠标/触摸均可绘制</small>
+            <small>支持手写笔压力感应</small>
         </h2>
 
         <div id="canvasWrapper" class="canvas-wrapper">
@@ -206,7 +198,7 @@
             <label>
                 <input type="checkbox" id="realTimeCheckbox" checked> 实时显示
             </label>
-            <span style="margin-left: auto;">✏️ 现在可以绘制了</span>
+            <span class="pressure-indicator" id="pressureDisplay">压力: 0.5</span>
         </div>
 
         <pre id="previewArea">[等待采集...]</pre>
@@ -237,13 +229,14 @@
             const canvas = document.getElementById('signatureCanvas');
             const wrapper = document.getElementById('canvasWrapper');
             const ctx = canvas.getContext('2d');
-            const drawingMask = document.getElementById('drawingMask');
+            const pressureDisplay = document.getElementById('pressureDisplay');
 
             // 状态
             let strokes = [];
             let currentStroke = null;
             let isDrawing = false;
             let lastWasHover = false;
+            let currentPressure = 0.5;
             
             // 性能优化
             let redrawPending = false;
@@ -264,30 +257,30 @@
             const exportBtn = document.getElementById('exportBtn');
             const copyBtn = document.getElementById('copyBtn');
 
-            // 锁定/解锁
-            function activateDrawingLock() {
-                drawingMask.classList.add('active');
-                document.body.style.overflow = 'hidden';
-            }
-
-            function deactivateDrawingLock() {
-                drawingMask.classList.remove('active');
-                document.body.style.overflow = '';
-            }
-
-            // 获取坐标
+            // 获取坐标和压力
             function getCanvasCoords(e) {
                 let clientX, clientY, pressure = 0.5;
 
-                if (e.type.startsWith('touch')) {
-                    const touch = e.touches[0] || e.changedTouches[0];
+                // 处理触摸事件（包括手写笔）
+                if (e.touches) {
+                    const touch = e.touches[0];
                     if (!touch) return null;
+                    
                     clientX = touch.clientX;
                     clientY = touch.clientY;
+                    
+                    // 获取压力值（手写笔支持）
                     if (touch.force !== undefined && touch.force > 0) {
                         pressure = Math.min(touch.force, 1.0);
                     }
-                } else {
+                    
+                    // 尝试获取手写笔类型（可选）
+                    if (touch.touchType === 'stylus') {
+                        // 手写笔，可以特殊处理
+                    }
+                } 
+                // 鼠标事件
+                else {
                     clientX = e.clientX;
                     clientY = e.clientY;
                 }
@@ -306,6 +299,10 @@
 
                 const x = (clientX - rect.left) * scaleX;
                 const y = (clientY - rect.top) * scaleY;
+
+                // 更新压力显示
+                currentPressure = pressure;
+                pressureDisplay.textContent = `压力: ${pressure.toFixed(2)}`;
 
                 return {
                     x: Math.max(0, Math.min(canvas.width, x)),
@@ -434,13 +431,10 @@
                 requestRedraw();
             }
 
-            // 开始绘制 - 鼠标版本
-            function startDrawingMouse(e) {
+            // 开始绘制 - 统一版本
+            function startDrawing(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                
-                // 鼠标绘制时不锁定滚动（因为鼠标不会导致滚动）
-                // 但仍然需要记录绘制状态
                 
                 const coords = getCanvasCoords(e);
                 if (!coords) return;
@@ -461,37 +455,7 @@
                 requestRedraw();
             }
 
-            // 开始绘制 - 触摸版本
-            function startDrawingTouch(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                // 触摸时锁定滚动
-                activateDrawingLock();
-                
-                const coords = getCanvasCoords(e);
-                if (!coords) {
-                    deactivateDrawingLock();
-                    return;
-                }
-
-                const now = performance.now();
-                lastPointTime = now;
-                
-                if (currentStroke) {
-                    strokes.push(currentStroke);
-                    currentStroke = null;
-                }
-                
-                currentStroke = new Stroke(new Point(coords.x, coords.y, now, coords.pressure));
-                isDrawing = true;
-                lastWasHover = false;
-
-                updatePreview();
-                requestRedraw();
-            }
-
-            // 结束绘制 - 通用版本
+            // 结束绘制
             function stopDrawing(e) {
                 if (e) {
                     e.preventDefault();
@@ -505,35 +469,34 @@
                 isDrawing = false;
                 lastWasHover = false;
                 
-                // 解锁（如果是触摸绘制的）
-                deactivateDrawingLock();
-                
                 updatePreview();
                 requestRedraw();
             }
 
             // 事件绑定
             function bindEvents() {
-                // 鼠标事件 - 直接绑定到wrapper
-                wrapper.addEventListener('mousedown', startDrawingMouse);
+                // 鼠标事件
+                wrapper.addEventListener('mousedown', startDrawing);
                 wrapper.addEventListener('mousemove', addPointFromEvent);
                 wrapper.addEventListener('mouseup', stopDrawing);
                 wrapper.addEventListener('mouseleave', stopDrawing);
                 
-                // 触摸事件 - 绑定到遮罩层和wrapper双重保障
-                wrapper.addEventListener('touchstart', startDrawingTouch, { passive: false });
+                // 触摸事件（包括手写笔）- 统一处理
+                wrapper.addEventListener('touchstart', startDrawing, { passive: false });
                 wrapper.addEventListener('touchmove', addPointFromEvent, { passive: false });
                 wrapper.addEventListener('touchend', stopDrawing, { passive: false });
                 wrapper.addEventListener('touchcancel', stopDrawing, { passive: false });
                 
-                // 遮罩层触摸事件（防止穿透）
-                drawingMask.addEventListener('touchstart', startDrawingTouch, { passive: false });
-                drawingMask.addEventListener('touchmove', addPointFromEvent, { passive: false });
-                drawingMask.addEventListener('touchend', stopDrawing, { passive: false });
-                drawingMask.addEventListener('touchcancel', stopDrawing, { passive: false });
+                // 指针事件（统一处理鼠标、触摸、手写笔）
+                wrapper.addEventListener('pointerdown', startDrawing);
+                wrapper.addEventListener('pointermove', addPointFromEvent);
+                wrapper.addEventListener('pointerup', stopDrawing);
+                wrapper.addEventListener('pointercancel', stopDrawing);
+                wrapper.addEventListener('pointerleave', stopDrawing);
                 
                 // 全局事件，确保释放
                 window.addEventListener('mouseup', stopDrawing);
+                window.addEventListener('touchend', stopDrawing);
             }
 
             // 按钮功能
@@ -542,16 +505,15 @@
                 currentStroke = null;
                 isDrawing = false;
                 lastWasHover = false;
-                deactivateDrawingLock();
                 updatePreview();
                 requestRedraw();
+                pressureDisplay.textContent = '压力: 0.5';
             }
 
             function undo() {
                 if (currentStroke) {
                     currentStroke = null;
                     isDrawing = false;
-                    deactivateDrawingLock();
                 } else if (strokes.length > 0) {
                     strokes.pop();
                 }
@@ -614,7 +576,7 @@
             bindEvents();
             clearCanvas();
 
-            console.log('初始化完成，可以使用鼠标绘制了');
+            console.log('初始化完成，支持手写笔和手指绘制');
         })();
     </script>
 </body>
