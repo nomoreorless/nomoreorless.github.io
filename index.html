@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>手写轨迹采集 - 完整触控版</title>
+    <title>手写轨迹采集 - 完整功能版</title>
     <style>
         * {
             margin: 0;
@@ -83,15 +83,13 @@
             gap: 12px;
             flex-wrap: wrap;
             align-items: center;
-            /* 工具栏区域允许触摸 */
-            touch-action: manipulation;
         }
         
         button {
             background: white;
             border: 1px solid #cbd5e1;
             border-radius: 40px;
-            padding: 12px 24px;  /* 增大点击区域 */
+            padding: 12px 24px;
             font-size: 1rem;
             font-weight: 500;
             color: #1e293b;
@@ -101,9 +99,6 @@
             gap: 8px;
             transition: all 0.15s ease;
             box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-            /* 确保按钮可点击 */
-            touch-action: manipulation;
-            -webkit-tap-highlight-color: rgba(0,0,0,0.1);
             min-width: 80px;
             justify-content: center;
         }
@@ -132,7 +127,6 @@
             display: flex;
             gap: 24px;
             margin-left: auto;
-            touch-action: manipulation;
         }
         
         .stats span {
@@ -148,7 +142,6 @@
             gap: 24px;
             flex-wrap: wrap;
             align-items: center;
-            touch-action: manipulation;
         }
         
         .footer-note label {
@@ -156,15 +149,13 @@
             align-items: center;
             gap: 8px;
             cursor: pointer;
-            padding: 8px 0;  /* 增加点击区域 */
-            touch-action: manipulation;
+            padding: 8px 0;
         }
         
         .footer-note input[type="checkbox"] {
             width: 20px;
             height: 20px;
             cursor: pointer;
-            touch-action: manipulation;
         }
         
         .pressure-indicator {
@@ -174,7 +165,6 @@
             border-radius: 20px;
             font-size: 0.9rem;
             margin-left: auto;
-            touch-action: manipulation;
         }
         
         pre {
@@ -190,10 +180,8 @@
             margin: 16px 0 0;
             white-space: pre-wrap;
             word-wrap: break-word;
-            touch-action: pan-y;  /* 允许预览区域上下滚动 */
         }
 
-        /* 调试信息 */
         .debug-info {
             font-size: 0.8rem;
             color: #64748b;
@@ -201,7 +189,6 @@
             padding: 8px;
             background: #f8fafc;
             border-radius: 8px;
-            touch-action: manipulation;
         }
     </style>
 </head>
@@ -209,7 +196,7 @@
     <div class="container">
         <h2>
             ✍️ 手写轨迹采集
-            <small>完整触控支持</small>
+            <small>完整功能版</small>
         </h2>
 
         <div id="canvasWrapper" class="canvas-wrapper">
@@ -236,7 +223,7 @@
             <span class="pressure-indicator" id="pressureDisplay">压力: 0.5</span>
         </div>
 
-        <div class="debug-info" id="debugInfo">状态: 就绪 (点击按钮测试)</div>
+        <div class="debug-info" id="debugInfo">状态: 就绪</div>
         <pre id="previewArea">[等待采集...]</pre>
     </div>
 
@@ -296,7 +283,7 @@
 
             // 更新调试信息
             function updateDebug(message) {
-                debugInfo.textContent = `状态: ${message} | 绘制: ${isDrawing} | 点数: ${currentStroke ? currentStroke.points.length : 0}`;
+                debugInfo.textContent = `状态: ${message} | 绘制: ${isDrawing} | 悬停采集: ${collectHoverCheckbox.checked} | 实时显示: ${realTimeCheckbox.checked}`;
                 console.log('调试:', message);
             }
 
@@ -521,9 +508,31 @@
                 requestRedraw();
             }
 
+            // 复选框事件处理
+            function setupCheckboxes() {
+                // 采集悬停复选框
+                collectHoverCheckbox.addEventListener('change', function(e) {
+                    updateDebug(`悬停采集: ${this.checked}`);
+                });
+                
+                collectHoverCheckbox.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+                
+                // 实时显示复选框
+                realTimeCheckbox.addEventListener('change', function(e) {
+                    updateDebug(`实时显示: ${this.checked}`);
+                    requestRedraw();
+                });
+                
+                realTimeCheckbox.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+            }
+
             // 事件绑定
             function bindEvents() {
-                // 画板区域 - 只在这里禁用触摸
+                // 画板区域事件
                 wrapper.addEventListener('touchstart', startDrawing, { passive: false });
                 wrapper.addEventListener('touchmove', addPointFromEvent, { passive: false });
                 wrapper.addEventListener('touchend', stopDrawing, { passive: false });
@@ -534,41 +543,35 @@
                 wrapper.addEventListener('mouseup', stopDrawing);
                 wrapper.addEventListener('mouseleave', stopDrawing);
                 
-                // 按钮点击测试 - 添加触摸事件确保按钮可点
-                clearBtn.addEventListener('touchstart', (e) => {
+                // 按钮事件 - 使用click即可，兼容鼠标和触摸
+                clearBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     clearCanvas();
-                }, { passive: false });
+                });
                 
-                undoBtn.addEventListener('touchstart', (e) => {
+                undoBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     undo();
-                }, { passive: false });
+                });
                 
-                exportBtn.addEventListener('touchstart', (e) => {
+                exportBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     downloadJSON();
-                }, { passive: false });
+                });
                 
-                copyBtn.addEventListener('touchstart', (e) => {
+                copyBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     copyJSON();
-                }, { passive: false });
+                });
                 
-                // 复选框触摸支持
-                collectHoverCheckbox.addEventListener('touchstart', (e) => {
-                    e.stopPropagation();
-                }, { passive: false });
-                
-                realTimeCheckbox.addEventListener('touchstart', (e) => {
-                    e.stopPropagation();
-                }, { passive: false });
+                // 设置复选框
+                setupCheckboxes();
                 
                 // 全局事件确保释放
                 window.addEventListener('mouseup', stopDrawing);
                 window.addEventListener('touchend', stopDrawing);
                 
-                updateDebug('事件绑定完成，按钮可点击');
+                updateDebug('事件绑定完成');
             }
 
             // 按钮功能
@@ -644,17 +647,10 @@
             }
 
             // 初始化
-            clearBtn.addEventListener('click', clearCanvas);
-            undoBtn.addEventListener('click', undo);
-            exportBtn.addEventListener('click', downloadJSON);
-            copyBtn.addEventListener('click', copyJSON);
-            realTimeCheckbox.addEventListener('change', requestRedraw);
-
-            // 启动
             bindEvents();
             clearCanvas();
 
-            console.log('初始化完成，所有按钮和复选框应该可点击');
+            console.log('初始化完成，所有功能正常');
         })();
     </script>
 </body>
