@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>手写轨迹采集 - 触控完美版</title>
+    <title>手写轨迹采集 - 触控修复版</title>
     <style>
         * {
             margin: 0;
@@ -54,7 +54,7 @@
             border-radius: 16px;
             background: #ffffff;
             cursor: crosshair;
-            /* 完全禁用所有触摸动作，但允许鼠标 */
+            /* 完全禁用所有触摸动作，防止页面滚动 */
             touch-action: none;
             -webkit-touch-action: none;
             /* 确保容器有正确的高度 */
@@ -168,13 +168,23 @@
             white-space: pre-wrap;
             word-wrap: break-word;
         }
+
+        /* 调试信息 */
+        .debug-info {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-top: 8px;
+            padding: 4px;
+            background: #f8fafc;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>
             ✍️ 手写轨迹采集
-            <small>支持手写笔压力感应</small>
+            <small>触控修复版</small>
         </h2>
 
         <div id="canvasWrapper" class="canvas-wrapper">
@@ -201,6 +211,7 @@
             <span class="pressure-indicator" id="pressureDisplay">压力: 0.5</span>
         </div>
 
+        <div class="debug-info" id="debugInfo">状态: 就绪</div>
         <pre id="previewArea">[等待采集...]</pre>
     </div>
 
@@ -230,6 +241,7 @@
             const wrapper = document.getElementById('canvasWrapper');
             const ctx = canvas.getContext('2d');
             const pressureDisplay = document.getElementById('pressureDisplay');
+            const debugInfo = document.getElementById('debugInfo');
 
             // 状态
             let strokes = [];
@@ -257,11 +269,16 @@
             const exportBtn = document.getElementById('exportBtn');
             const copyBtn = document.getElementById('copyBtn');
 
+            // 更新调试信息
+            function updateDebug(message) {
+                debugInfo.textContent = `状态: ${message} | 绘制: ${isDrawing} | 当前笔画点数: ${currentStroke ? currentStroke.points.length : 0}`;
+            }
+
             // 获取坐标和压力
             function getCanvasCoords(e) {
                 let clientX, clientY, pressure = 0.5;
 
-                // 处理触摸事件（包括手写笔）
+                // 处理触摸事件
                 if (e.touches) {
                     const touch = e.touches[0];
                     if (!touch) return null;
@@ -269,20 +286,18 @@
                     clientX = touch.clientX;
                     clientY = touch.clientY;
                     
-                    // 获取压力值（手写笔支持）
+                    // 获取压力值
                     if (touch.force !== undefined && touch.force > 0) {
                         pressure = Math.min(touch.force, 1.0);
                     }
                     
-                    // 尝试获取手写笔类型（可选）
-                    if (touch.touchType === 'stylus') {
-                        // 手写笔，可以特殊处理
-                    }
+                    updateDebug(`触摸: (${clientX.toFixed(0)}, ${clientY.toFixed(0)}) 压力:${pressure.toFixed(2)}`);
                 } 
                 // 鼠标事件
                 else {
                     clientX = e.clientX;
                     clientY = e.clientY;
+                    updateDebug(`鼠标: (${clientX.toFixed(0)}, ${clientY.toFixed(0)})`);
                 }
 
                 const rect = canvas.getBoundingClientRect();
@@ -290,6 +305,7 @@
                 // 边界检查
                 if (clientX < rect.left || clientX > rect.right || 
                     clientY < rect.top || clientY > rect.bottom) {
+                    updateDebug('超出边界');
                     return null;
                 }
                 
@@ -402,6 +418,7 @@
                     // 绘制模式
                     if (!currentStroke) {
                         currentStroke = new Stroke(new Point(coords.x, coords.y, now, coords.pressure));
+                        updateDebug('开始新笔画');
                     } else {
                         const last = currentStroke.lastPoint();
                         if (shouldAddPoint(last, coords.x, coords.y, now)) {
@@ -418,6 +435,7 @@
                         }
                         strokes.push(new Stroke(new Point(coords.x, coords.y, now, coords.pressure)));
                         lastWasHover = true;
+                        updateDebug('悬停开始');
                     } else {
                         const lastStroke = strokes[strokes.length - 1];
                         const last = lastStroke.lastPoint();
@@ -431,26 +449,32 @@
                 requestRedraw();
             }
 
-            // 开始绘制 - 统一版本
+            // 开始绘制
             function startDrawing(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 
                 const coords = getCanvasCoords(e);
-                if (!coords) return;
+                if (!coords) {
+                    updateDebug('无法获取坐标');
+                    return;
+                }
 
                 const now = performance.now();
                 lastPointTime = now;
                 
+                // 保存之前的笔画
                 if (currentStroke) {
                     strokes.push(currentStroke);
                     currentStroke = null;
                 }
                 
+                // 创建新笔画
                 currentStroke = new Stroke(new Point(coords.x, coords.y, now, coords.pressure));
                 isDrawing = true;
                 lastWasHover = false;
 
+                updateDebug(`开始绘制 at (${coords.x.toFixed(0)}, ${coords.y.toFixed(0)})`);
                 updatePreview();
                 requestRedraw();
             }
@@ -465,7 +489,9 @@
                 if (isDrawing && currentStroke) {
                     strokes.push(currentStroke);
                     currentStroke = null;
+                    updateDebug('结束绘制，保存笔画');
                 }
+                
                 isDrawing = false;
                 lastWasHover = false;
                 
@@ -473,7 +499,7 @@
                 requestRedraw();
             }
 
-            // 事件绑定
+            // 简单的事件绑定 - 只使用最基本的事件
             function bindEvents() {
                 // 鼠标事件
                 wrapper.addEventListener('mousedown', startDrawing);
@@ -481,22 +507,17 @@
                 wrapper.addEventListener('mouseup', stopDrawing);
                 wrapper.addEventListener('mouseleave', stopDrawing);
                 
-                // 触摸事件（包括手写笔）- 统一处理
+                // 触摸事件 - 最简单的绑定
                 wrapper.addEventListener('touchstart', startDrawing, { passive: false });
                 wrapper.addEventListener('touchmove', addPointFromEvent, { passive: false });
                 wrapper.addEventListener('touchend', stopDrawing, { passive: false });
                 wrapper.addEventListener('touchcancel', stopDrawing, { passive: false });
                 
-                // 指针事件（统一处理鼠标、触摸、手写笔）
-                wrapper.addEventListener('pointerdown', startDrawing);
-                wrapper.addEventListener('pointermove', addPointFromEvent);
-                wrapper.addEventListener('pointerup', stopDrawing);
-                wrapper.addEventListener('pointercancel', stopDrawing);
-                wrapper.addEventListener('pointerleave', stopDrawing);
-                
-                // 全局事件，确保释放
+                // 全局事件确保释放
                 window.addEventListener('mouseup', stopDrawing);
                 window.addEventListener('touchend', stopDrawing);
+                
+                updateDebug('事件绑定完成');
             }
 
             // 按钮功能
@@ -508,6 +529,7 @@
                 updatePreview();
                 requestRedraw();
                 pressureDisplay.textContent = '压力: 0.5';
+                updateDebug('画板已清空');
             }
 
             function undo() {
@@ -519,6 +541,7 @@
                 }
                 updatePreview();
                 requestRedraw();
+                updateDebug('撤销操作');
             }
 
             function exportJSON() {
@@ -573,6 +596,7 @@
             copyBtn.addEventListener('click', copyJSON);
             realTimeCheckbox.addEventListener('change', requestRedraw);
 
+            // 启动
             bindEvents();
             clearCanvas();
 
