@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>手写轨迹采集 - 触控修复版</title>
+    <title>手写轨迹采集 - 完整触控版</title>
     <style>
         * {
             margin: 0;
@@ -48,13 +48,13 @@
             margin-left: auto;
         }
         
-        /* 画板容器 */
+        /* 画板容器 - 只在画板区域禁用触摸 */
         .canvas-wrapper {
             border: 2px solid #e2e8f0;
             border-radius: 16px;
             background: #ffffff;
             cursor: crosshair;
-            /* 完全禁用所有触摸动作，防止页面滚动 */
+            /* 只在画板区域禁用触摸，防止页面滚动 */
             touch-action: none;
             -webkit-touch-action: none;
             /* 确保容器有正确的高度 */
@@ -83,22 +83,29 @@
             gap: 12px;
             flex-wrap: wrap;
             align-items: center;
+            /* 工具栏区域允许触摸 */
+            touch-action: manipulation;
         }
         
         button {
             background: white;
             border: 1px solid #cbd5e1;
             border-radius: 40px;
-            padding: 10px 20px;
-            font-size: 0.95rem;
+            padding: 12px 24px;  /* 增大点击区域 */
+            font-size: 1rem;
             font-weight: 500;
             color: #1e293b;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             transition: all 0.15s ease;
             box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            /* 确保按钮可点击 */
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+            min-width: 80px;
+            justify-content: center;
         }
         
         button:active {
@@ -112,15 +119,20 @@
             color: white;
         }
         
+        button.primary:active {
+            background: #1d4ed8;
+        }
+        
         .stats {
             background: #f1f5f9;
             border-radius: 40px;
             padding: 8px 20px;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             color: #334155;
             display: flex;
             gap: 24px;
             margin-left: auto;
+            touch-action: manipulation;
         }
         
         .stats span {
@@ -129,29 +141,40 @@
         }
         
         .footer-note {
-            margin-top: 16px;
-            font-size: 0.85rem;
+            margin-top: 20px;
+            font-size: 0.9rem;
             color: #64748b;
             display: flex;
-            gap: 16px;
+            gap: 24px;
             flex-wrap: wrap;
             align-items: center;
+            touch-action: manipulation;
         }
         
         .footer-note label {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             cursor: pointer;
+            padding: 8px 0;  /* 增加点击区域 */
+            touch-action: manipulation;
+        }
+        
+        .footer-note input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            touch-action: manipulation;
         }
         
         .pressure-indicator {
             background: #e0f2fe;
             color: #0369a1;
-            padding: 4px 12px;
+            padding: 6px 16px;
             border-radius: 20px;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             margin-left: auto;
+            touch-action: manipulation;
         }
         
         pre {
@@ -159,24 +182,26 @@
             color: #e2e8f0;
             border-radius: 14px;
             padding: 14px 18px;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             font-family: monospace;
             overflow-x: auto;
             max-width: 100%;
             max-height: 150px;
-            margin: 12px 0 0;
+            margin: 16px 0 0;
             white-space: pre-wrap;
             word-wrap: break-word;
+            touch-action: pan-y;  /* 允许预览区域上下滚动 */
         }
 
         /* 调试信息 */
         .debug-info {
-            font-size: 0.7rem;
+            font-size: 0.8rem;
             color: #64748b;
-            margin-top: 8px;
-            padding: 4px;
+            margin-top: 12px;
+            padding: 8px;
             background: #f8fafc;
-            border-radius: 4px;
+            border-radius: 8px;
+            touch-action: manipulation;
         }
     </style>
 </head>
@@ -184,7 +209,7 @@
     <div class="container">
         <h2>
             ✍️ 手写轨迹采集
-            <small>触控修复版</small>
+            <small>完整触控支持</small>
         </h2>
 
         <div id="canvasWrapper" class="canvas-wrapper">
@@ -211,7 +236,7 @@
             <span class="pressure-indicator" id="pressureDisplay">压力: 0.5</span>
         </div>
 
-        <div class="debug-info" id="debugInfo">状态: 就绪</div>
+        <div class="debug-info" id="debugInfo">状态: 就绪 (点击按钮测试)</div>
         <pre id="previewArea">[等待采集...]</pre>
     </div>
 
@@ -271,7 +296,8 @@
 
             // 更新调试信息
             function updateDebug(message) {
-                debugInfo.textContent = `状态: ${message} | 绘制: ${isDrawing} | 当前笔画点数: ${currentStroke ? currentStroke.points.length : 0}`;
+                debugInfo.textContent = `状态: ${message} | 绘制: ${isDrawing} | 点数: ${currentStroke ? currentStroke.points.length : 0}`;
+                console.log('调试:', message);
             }
 
             // 获取坐标和压力
@@ -290,14 +316,11 @@
                     if (touch.force !== undefined && touch.force > 0) {
                         pressure = Math.min(touch.force, 1.0);
                     }
-                    
-                    updateDebug(`触摸: (${clientX.toFixed(0)}, ${clientY.toFixed(0)}) 压力:${pressure.toFixed(2)}`);
                 } 
                 // 鼠标事件
                 else {
                     clientX = e.clientX;
                     clientY = e.clientY;
-                    updateDebug(`鼠标: (${clientX.toFixed(0)}, ${clientY.toFixed(0)})`);
                 }
 
                 const rect = canvas.getBoundingClientRect();
@@ -305,7 +328,6 @@
                 // 边界检查
                 if (clientX < rect.left || clientX > rect.right || 
                     clientY < rect.top || clientY > rect.bottom) {
-                    updateDebug('超出边界');
                     return null;
                 }
                 
@@ -474,7 +496,7 @@
                 isDrawing = true;
                 lastWasHover = false;
 
-                updateDebug(`开始绘制 at (${coords.x.toFixed(0)}, ${coords.y.toFixed(0)})`);
+                updateDebug(`开始绘制`);
                 updatePreview();
                 requestRedraw();
             }
@@ -499,25 +521,54 @@
                 requestRedraw();
             }
 
-            // 简单的事件绑定 - 只使用最基本的事件
+            // 事件绑定
             function bindEvents() {
-                // 鼠标事件
-                wrapper.addEventListener('mousedown', startDrawing);
-                wrapper.addEventListener('mousemove', addPointFromEvent);
-                wrapper.addEventListener('mouseup', stopDrawing);
-                wrapper.addEventListener('mouseleave', stopDrawing);
-                
-                // 触摸事件 - 最简单的绑定
+                // 画板区域 - 只在这里禁用触摸
                 wrapper.addEventListener('touchstart', startDrawing, { passive: false });
                 wrapper.addEventListener('touchmove', addPointFromEvent, { passive: false });
                 wrapper.addEventListener('touchend', stopDrawing, { passive: false });
                 wrapper.addEventListener('touchcancel', stopDrawing, { passive: false });
                 
+                wrapper.addEventListener('mousedown', startDrawing);
+                wrapper.addEventListener('mousemove', addPointFromEvent);
+                wrapper.addEventListener('mouseup', stopDrawing);
+                wrapper.addEventListener('mouseleave', stopDrawing);
+                
+                // 按钮点击测试 - 添加触摸事件确保按钮可点
+                clearBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    clearCanvas();
+                }, { passive: false });
+                
+                undoBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    undo();
+                }, { passive: false });
+                
+                exportBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    downloadJSON();
+                }, { passive: false });
+                
+                copyBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    copyJSON();
+                }, { passive: false });
+                
+                // 复选框触摸支持
+                collectHoverCheckbox.addEventListener('touchstart', (e) => {
+                    e.stopPropagation();
+                }, { passive: false });
+                
+                realTimeCheckbox.addEventListener('touchstart', (e) => {
+                    e.stopPropagation();
+                }, { passive: false });
+                
                 // 全局事件确保释放
                 window.addEventListener('mouseup', stopDrawing);
                 window.addEventListener('touchend', stopDrawing);
                 
-                updateDebug('事件绑定完成');
+                updateDebug('事件绑定完成，按钮可点击');
             }
 
             // 按钮功能
@@ -561,7 +612,7 @@
                         points: s.points.map(p => ({
                             x: Math.round(p.x * 10) / 10,
                             y: Math.round(p.y * 10) / 10,
-                            t: p.t,
+                            t: Math.round(p.t),
                             p: Math.round(p.p * 100) / 100
                         }))
                     }))
@@ -578,14 +629,17 @@
                 a.download = `handwriting_${Date.now()}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
+                updateDebug('JSON已导出');
             }
 
             async function copyJSON() {
                 try {
                     await navigator.clipboard.writeText(exportJSON());
                     alert('已复制到剪贴板');
+                    updateDebug('已复制到剪贴板');
                 } catch (err) {
                     alert('复制失败');
+                    updateDebug('复制失败');
                 }
             }
 
@@ -600,7 +654,7 @@
             bindEvents();
             clearCanvas();
 
-            console.log('初始化完成，支持手写笔和手指绘制');
+            console.log('初始化完成，所有按钮和复选框应该可点击');
         })();
     </script>
 </body>
